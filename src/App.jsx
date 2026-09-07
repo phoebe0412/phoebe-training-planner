@@ -48,6 +48,22 @@ function useSessionDrafts() {
   return [drafts, setDrafts];
 }
 
+function useSharedPlan() {
+  const [plan, setPlan] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('phoebe-shared-training-plan')) || makePlan(); } catch { return makePlan(); }
+  });
+  useEffect(() => localStorage.setItem('phoebe-shared-training-plan', JSON.stringify(plan)), [plan]);
+  return [plan, setPlan];
+}
+
+function useStudentTrainingValues() {
+  const [values, setValues] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('phoebe-student-training-values')) || {}; } catch { return {}; }
+  });
+  useEffect(() => localStorage.setItem('phoebe-student-training-values', JSON.stringify(values)), [values]);
+  return [values, setValues];
+}
+
 function StudentModal({ mode, student, onClose, onSave }) {
   const [form, setForm] = useState({ name: student?.name || '', goal: student?.goal || '' });
   const submit = (event) => { event.preventDefault(); if (form.name.trim()) onSave({ name: form.name.trim(), goal: form.goal.trim() || '尚未設定訓練重點' }); };
@@ -58,6 +74,8 @@ export function App() {
   const [students, setStudents] = useStudents();
   const [sessions, setSessions] = useSessions();
   const [sessionDrafts, setSessionDrafts] = useSessionDrafts();
+  const [sharedPlan, setSharedPlan] = useSharedPlan();
+  const [studentTrainingValues, setStudentTrainingValues] = useStudentTrainingValues();
   const [selectedId, setSelectedId] = useState(students[0]?.id || '');
   const [modal, setModal] = useState('');
   const [view, setView] = useState('training');
@@ -65,24 +83,15 @@ export function App() {
   const student = students.find((item) => item.id === selectedId) || students[0];
   const sessionDraft = sessionDrafts[student?.id] || newSessionDraft();
   const updateSessionDraft = (patch) => setSessionDrafts((drafts) => ({ ...drafts, [student.id]: { ...sessionDraft, ...patch } }));
+  const studentPlan = sharedPlan.map((exercise) => ({ ...exercise, ...(studentTrainingValues[student?.id]?.[exercise.id] || {}) }));
   const [saveState, setSaveState] = useState('');
-  const updateExercise = (index, key, value) => setStudents((items) => items.map((item) => item.id === student.id ? { ...item, plan: item.plan.map((exercise, i) => i === index ? { ...exercise, [key]: value } : exercise) } : item));
-  const addExercise = (section) => setStudents((items) => items.map((item) => item.id === student.id ? { ...item, plan: [...item.plan, { id: `exercise-${crypto.randomUUID()}`, section, name: '新動作', reps: '8', sets: '3', unit: '下', note: '', weight: '' }] } : item));
-  const deleteExercise = (index) => setStudents((items) => items.map((item) => item.id === student.id ? { ...item, plan: item.plan.filter((_, i) => i !== index) } : item));
-  const moveExercise = (index, direction) => setStudents((items) => items.map((item) => {
-    if (item.id !== student.id) return item;
-    const target = index + direction;
-    if (target < 0 || target >= item.plan.length) return item;
-    const plan = [...item.plan]; [plan[index], plan[target]] = [plan[target], plan[index]];
-    return { ...item, plan };
-  }));
+  const updateSharedExercise = (index, key, value) => setSharedPlan((plan) => plan.map((exercise, i) => i === index ? { ...exercise, [key]: value } : exercise));
+  const updateStudentExercise = (exerciseId, key, value) => setStudentTrainingValues((allValues) => ({ ...allValues, [student.id]: { ...allValues[student.id], [exerciseId]: { ...allValues[student.id]?.[exerciseId], [key]: value } } }));
+  const addExercise = () => setSharedPlan((plan) => [...plan, { id: `exercise-${crypto.randomUUID()}`, section: '共用課表', name: '新動作', reps: '8', sets: '3', unit: '下', note: '', weight: '' }]);
+  const deleteExercise = (index) => setSharedPlan((plan) => plan.filter((_, i) => i !== index));
   const moveExerciseTo = (from, to) => {
     if (from === to || from == null || to == null) return;
-    setStudents((items) => items.map((item) => {
-      if (item.id !== student.id) return item;
-      const plan = [...item.plan]; const [exercise] = plan.splice(from, 1); plan.splice(to, 0, exercise);
-      return { ...item, plan };
-    }));
+    setSharedPlan((plan) => { const nextPlan = [...plan]; const [exercise] = nextPlan.splice(from, 1); nextPlan.splice(to, 0, exercise); return nextPlan; });
   };
   const saveToSheets = async () => {
     setSaveState('儲存中…');
@@ -91,7 +100,7 @@ export function App() {
     if (!TRAINING_SYNC_URL) { setSaveState('已儲存於本機'); return; }
     try {
       await Promise.all([
-        fetch(TRAINING_SYNC_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ action: 'appendTraining', student }) }),
+        fetch(TRAINING_SYNC_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ action: 'appendTraining', student: { ...student, plan: studentPlan } }) }),
         fetch(TRAINING_SYNC_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ action: 'appendSession', session: nextSession }) }),
       ]);
       setSaveState('已同步至 Google Sheets');
@@ -116,8 +125,8 @@ export function App() {
       <aside className="student-sidebar"><div className="sidebar-label"><span>學員名單</span><button type="button" onClick={() => setModal('new')} aria-label="新增學員">＋</button></div><div className="student-list">{students.map((item) => <button key={item.id} type="button" className={`student-item ${item.id === student.id ? 'selected' : ''}`} onClick={() => setSelectedId(item.id)}><span className="student-initial">{item.name.slice(0, 1)}</span><strong>{item.name}</strong></button>)}</div></aside>
       <section className="program-area"><div className="program-heading"><div><p className="overline">{student.name}・{student.goal}</p></div><div className="program-actions"><button type="button" className="quiet-button" onClick={() => setModal('edit')}>編輯學員</button><button type="button" className="delete-button" onClick={deleteStudent}>刪除</button></div></div>
         <div className="session-note"><span>本次課程</span><input aria-label="上課日期" type="date" value={sessionDraft.date} onChange={(e) => updateSessionDraft({ date: e.target.value })} /><input aria-label="上課時間" type="time" value={sessionDraft.time} onChange={(e) => updateSessionDraft({ time: e.target.value })} /><textarea aria-label="上課紀錄" value={sessionDraft.record} onChange={(e) => updateSessionDraft({ record: e.target.value })} placeholder="上課紀錄（選填）" /></div>
-        <section className="program-section no-section-title"><div className="exercise-head"><span>動作</span><span>重量</span><span>次數</span><span>組數</span></div>{student.plan.map((exercise, index) => <div className={`exercise-row ${dragIndex === index ? 'is-dragging' : ''}`} key={exercise.id || index} onDragOver={(event) => event.preventDefault()} onDrop={() => { moveExerciseTo(dragIndex, index); setDragIndex(null); }}><div className="exercise-title"><input className="exercise-name" value={exercise.name} onChange={(e) => updateExercise(index, 'name', e.target.value)} aria-label="動作名稱" /><input className="exercise-description" value={exercise.note} onChange={(e) => updateExercise(index, 'note', e.target.value)} placeholder="動作敘述（選填）" aria-label="動作敘述" /></div><label className="metric"><input inputMode="decimal" value={exercise.weight} onChange={(e) => updateExercise(index, 'weight', e.target.value)} placeholder="—" /><span>kg</span></label><label className="metric"><input value={exercise.reps} onChange={(e) => updateExercise(index, 'reps', e.target.value)} /><span>{exercise.unit}</span></label><label className="metric"><input inputMode="numeric" value={exercise.sets} onChange={(e) => updateExercise(index, 'sets', e.target.value)} /><span>組</span></label><div className="row-controls"><button className="drag-handle" type="button" draggable onDragStart={() => setDragIndex(index)} onDragEnd={() => setDragIndex(null)} aria-label={`拖拉排序 ${exercise.name}`}>⠿</button><button className="delete-exercise" type="button" onClick={() => deleteExercise(index)} aria-label={`刪除 ${exercise.name}`}>×</button></div></div>)}</section>
-        <button className="add-exercise-bottom" type="button" onClick={() => addExercise(student.plan.at(-1)?.section || '自訂動作')}>＋ 新增動作</button>
+        <section className="program-section no-section-title"><div className="exercise-head"><span>動作</span><span>重量</span><span>次數</span><span>組數</span></div>{studentPlan.map((exercise, index) => <div className={`exercise-row ${dragIndex === index ? 'is-dragging' : ''}`} key={exercise.id || index} onDragOver={(event) => event.preventDefault()} onDrop={() => { moveExerciseTo(dragIndex, index); setDragIndex(null); }}><div className="exercise-title"><input className="exercise-name" value={exercise.name} onChange={(e) => updateSharedExercise(index, 'name', e.target.value)} aria-label="動作名稱" /><input className="exercise-description" value={exercise.note} onChange={(e) => updateSharedExercise(index, 'note', e.target.value)} placeholder="動作敘述（選填）" aria-label="動作敘述" /></div><label className="metric"><input inputMode="decimal" value={exercise.weight} onChange={(e) => updateStudentExercise(exercise.id, 'weight', e.target.value)} placeholder="—" /><span>kg</span></label><label className="metric"><input value={exercise.reps} onChange={(e) => updateStudentExercise(exercise.id, 'reps', e.target.value)} /><span>{exercise.unit}</span></label><label className="metric"><input inputMode="numeric" value={exercise.sets} onChange={(e) => updateStudentExercise(exercise.id, 'sets', e.target.value)} /><span>組</span></label><div className="row-controls"><button className="drag-handle" type="button" draggable onDragStart={() => setDragIndex(index)} onDragEnd={() => setDragIndex(null)} aria-label={`拖拉排序 ${exercise.name}`}>⠿</button><button className="delete-exercise" type="button" onClick={() => deleteExercise(index)} aria-label={`刪除 ${exercise.name}`}>×</button></div></div>)}</section>
+        <button className="add-exercise-bottom" type="button" onClick={addExercise}>＋ 新增動作</button>
         <div className="finish-card"><div><p className="overline">手動儲存</p><h2>完成本次調整後儲存</h2><p>{saveState || '重量、次數與組數會保留在此手機，並同步至 Google Sheets。'}</p></div><button type="button" onClick={saveToSheets}>儲存課表</button></div>
       </section>
     </div></>}
