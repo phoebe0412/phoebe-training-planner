@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react';
 import { TRAINING_SYNC_URL } from './config';
 
+const PROGRAM_VERSION = 'experience-plan-2026-09-08';
 const PROGRAM = [
-  ['動態評估與軟組織重置', '貓駝式', '8', '2', '下', '活化脊椎靈活度、誘發核心深層肌群'],
-  ['動態評估與軟組織重置', '呼吸練習 1', '5', '2', '次', '左右腹腔吸飽氣'],
-  ['動態評估與軟組織重置', '呼吸練習 2', '5', '2', '次', '後背與肋骨吸飽氣'],
-  ['ATG 關節啟動與末端防護', '脛前肌上提（Tibialis Raise）', '20', '2', '次', '建立腳踝制動與膝蓋防護'],
-  ['ATG 關節啟動與末端防護', '斜板深蹲啟動（Slant Board Squat）', '15', '2', '次', '誘導膝蓋過腳趾、髕骨肌腱溫熱'],
-  ['ATG 關節啟動與末端防護', '大象漫步（Elephant Walk）', '20', '1', '下', '放鬆後側鏈與膕繩肌緊'],
-  ['單側與結締組織補強', 'ATG 分腿蹲（ATG Split Squat）', '8', '3', '下', '每側；完全折疊後腳伸展髖屈肌'],
-  ['單側與結締組織補強', '輔助式北歐挺身（Assisted Nordic Curl）', '5–6', '3', '下', '後側鏈肌腱耐受度'],
-  ['單側與結締組織補強', '壺鈴單手農夫走路', '30', '2', '公尺', '每側；核心抗旋轉'],
-  ['自由重量主項 — 高品質肌力', '俯身啞鈴划船', '8', '3', '下', '主訓練動作'],
-  ['自由重量主項 — 高品質肌力', '滑輪下拉', '8', '3', '下', '主訓練動作'],
-  ['降溫、放鬆與課堂複盤', 'Couch Stretch', '60', '1', '秒', '每側'],
+  ['', 'KAT 整合呼吸', '5', '2', '次', '平躺腳抬高 90 度、骨盆後傾呼吸；每次慢吸長吐'],
+  ['', '死蟲式（Dead Bug）', '6', '2', '下', '每側 6 下；專注肋骨下沉與骨盆中立'],
+  ['', '大象漫步（Elephant Walk）', '15–20', '1', '下', '每側；快速鬆開後側鏈'],
+  ['', '脛前肌上提（Tibialis Raise）', '20', '2', '次', '與下一動作連續進行'],
+  ['', '斜板深蹲自重啟動（Slant Board Squat）', '15', '2', '次', '與脛前肌上提組成超級組'],
+  ['', 'ATG 分腿蹲（ATG Split Squat）', '8', '3', '下', '每側；組間休息 90 秒，抓滿行程與後腳髖伸'],
+  ['', '輔助式北歐挺身（Assisted Nordic Curl）', '6', '3', '下', '專注膕繩肌離心控制'],
+  ['', '滑輪下拉', '8–10', '3', '下', '與壺鈴單手農夫走路組成超級組'],
+  ['', '壺鈴單手農夫走路', '30', '3', '公尺', '每側；作為背部組間的抗側屈核心訓練'],
+  ['', '俯身啞鈴划船', '8–10', '2–3', '下', '支撐式或雙手，注意避免下背代償'],
+  ['', '沙發伸展（Couch Stretch）', '60', '2', '秒', '每側；徹底打開深層髖屈肌與股直肌'],
 ];
 
 const makePlan = () => PROGRAM.map(([section, name, reps, sets, unit, note]) => ({ id: `exercise-${crypto.randomUUID()}`, section, name, reps, sets, unit, note, weight: '' }));
@@ -50,7 +50,12 @@ function useSessionDrafts() {
 
 function useSharedPlan() {
   const [plan, setPlan] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('phoebe-shared-training-plan')) || makePlan(); } catch { return makePlan(); }
+    try {
+      const savedVersion = localStorage.getItem('phoebe-shared-training-plan-version');
+      if (savedVersion === PROGRAM_VERSION) return JSON.parse(localStorage.getItem('phoebe-shared-training-plan')) || makePlan();
+    } catch { /* 使用新版預設課表 */ }
+    localStorage.setItem('phoebe-shared-training-plan-version', PROGRAM_VERSION);
+    return makePlan();
   });
   useEffect(() => localStorage.setItem('phoebe-shared-training-plan', JSON.stringify(plan)), [plan]);
   return [plan, setPlan];
